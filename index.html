@@ -45,6 +45,7 @@
       align-items: center;
       font-size: 56px;
       background: rgba(255,255,255,0.15);
+      transition: 0.3s;
     }
 
     h1 {
@@ -63,7 +64,7 @@
       padding: 14px 22px;
       border-radius: 999px;
       width: fit-content;
-      font-size: 20px;
+      font-size: 18px;
       font-weight: bold;
     }
 
@@ -78,9 +79,22 @@
       color: #cbd5e1;
     }
 
+    .waiting {
+      background: #38bdf8;
+      color: #082f49;
+    }
+
     .error {
       background: #ef4444;
       color: white;
+    }
+
+    .online {
+      color: #86efac;
+    }
+
+    .offline {
+      color: #fca5a5;
     }
 
     .buttons {
@@ -104,6 +118,11 @@
       transform: scale(0.95);
     }
 
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .btn-on {
       background: #facc15;
       color: #111827;
@@ -114,10 +133,20 @@
       color: white;
     }
 
-    .footer {
-      margin-top: 22px;
+    .info {
+      margin-top: 20px;
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.5);
       font-size: 14px;
+      line-height: 1.7;
       color: #cbd5e1;
+    }
+
+    .footer {
+      margin-top: 18px;
+      font-size: 13px;
+      color: #94a3b8;
     }
 
     @media (max-width: 480px) {
@@ -161,19 +190,25 @@
     <div class="icon" id="lampIcon">💡</div>
 
     <h1>Smart Light</h1>
-    <div class="subtitle">By Park_Sontaya</div>
+    <div class="subtitle">ESP32 + Firebase + Servo SG90</div>
 
-    <div id="statusBox" class="status off">
+    <div id="statusBox" class="status waiting">
       Loading...
     </div>
 
     <div class="buttons">
-      <button class="btn-on" onclick="setLight(true)">ON</button>
-      <button class="btn-off" onclick="setLight(false)">OFF</button>
+      <button id="onBtn" class="btn-on" onclick="sendCommand(true)">ON</button>
+      <button id="offBtn" class="btn-off" onclick="sendCommand(false)">OFF</button>
+    </div>
+
+    <div class="info">
+      ESP32: <span id="espStatus" class="offline">Checking...</span><br>
+      Command: <span id="commandText">-</span><br>
+      Real Status: <span id="realStatusText">-</span>
     </div>
 
     <div class="footer" id="footerText">
-      Waiting for Firebase...
+      Waiting for ESP32 response...
     </div>
   </div>
 
@@ -183,25 +218,77 @@
     const statusBox = document.getElementById("statusBox");
     const lampIcon = document.getElementById("lampIcon");
     const footerText = document.getElementById("footerText");
+    const espStatus = document.getElementById("espStatus");
+    const commandText = document.getElementById("commandText");
+    const realStatusText = document.getElementById("realStatusText");
+    const onBtn = document.getElementById("onBtn");
+    const offBtn = document.getElementById("offBtn");
 
-    async function setLight(state) {
+    let currentCommand = null;
+    let currentStatus = null;
+    let isWaiting = false;
+
+    async function firebaseGet(path) {
+      const res = await fetch(`${DATABASE_URL}/${path}.json`);
+      return await res.json();
+    }
+
+    async function firebasePut(path, value) {
+      await fetch(`${DATABASE_URL}/${path}.json`, {
+        method: "PUT",
+        body: JSON.stringify(value)
+      });
+    }
+
+    async function sendCommand(state) {
       try {
-        await fetch(`${DATABASE_URL}/light.json`, {
-          method: "PUT",
-          body: JSON.stringify(state)
-        });
+        isWaiting = true;
+        setButtons(false);
 
-        updateUI(state);
+        await firebasePut("lightCommand", state);
+
+        statusBox.innerText = state ? "WAITING FOR ON..." : "WAITING FOR OFF...";
+        statusBox.className = "status waiting";
+        footerText.innerText = "Sent command. Waiting for ESP32 servo movement...";
       } catch (error) {
         showError();
       }
     }
 
-    async function getLightStatus() {
+    async function updateData() {
       try {
-        const res = await fetch(`${DATABASE_URL}/light.json`);
-        const state = await res.json();
-        updateUI(state);
+        const [command, status, online] = await Promise.all([
+          firebaseGet("lightCommand"),
+          firebaseGet("lightStatus"),
+          firebaseGet("espOnline")
+        ]);
+
+        currentCommand = command;
+        currentStatus = status;
+
+        commandText.innerText = command === true ? "ON requested" : "OFF requested";
+        realStatusText.innerText = status === true ? "LIGHT ON" : "LIGHT OFF";
+
+        if (online === true) {
+          espStatus.innerText = "Online";
+          espStatus.className = "online";
+        } else {
+          espStatus.innerText = "Offline";
+          espStatus.className = "offline";
+        }
+
+        if (command === status) {
+          isWaiting = false;
+          setButtons(true);
+          updateUI(status);
+        } else {
+          isWaiting = true;
+          setButtons(false);
+          statusBox.innerText = command ? "OPENING..." : "CLOSING...";
+          statusBox.className = "status waiting";
+          footerText.innerText = "Waiting for ESP32 to confirm servo movement...";
+        }
+
       } catch (error) {
         showError();
       }
@@ -212,12 +299,15 @@
         statusBox.innerText = "LIGHT ON";
         statusBox.className = "status on";
         lampIcon.style.filter = "drop-shadow(0 0 25px #facc15)";
-        footerText.innerText = "Online • Light is ON";
-      } else {
+        footerText.innerText = "Confirmed by ESP32";
+      } else if (state === false) {
         statusBox.innerText = "LIGHT OFF";
         statusBox.className = "status off";
         lampIcon.style.filter = "none";
-        footerText.innerText = "Online • Light is OFF";
+        footerText.innerText = "Confirmed by ESP32";
+      } else {
+        statusBox.innerText = "NO STATUS";
+        statusBox.className = "status waiting";
       }
     }
 
@@ -225,10 +315,16 @@
       statusBox.innerText = "Connection Error";
       statusBox.className = "status error";
       footerText.innerText = "Cannot connect to Firebase";
+      setButtons(true);
     }
 
-    getLightStatus();
-    setInterval(getLightStatus, 1000);
+    function setButtons(enable) {
+      onBtn.disabled = !enable;
+      offBtn.disabled = !enable;
+    }
+
+    updateData();
+    setInterval(updateData, 1000);
   </script>
 
 </body>
