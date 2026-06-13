@@ -15,24 +15,24 @@
     body {
       margin: 0;
       min-height: 100vh;
-      background: linear-gradient(135deg, #020617, #0f172a, #312e81);
+      background: linear-gradient(135deg, #020617, #111827, #312e81);
       display: flex;
       justify-content: center;
       align-items: center;
-      color: white;
       padding: 20px;
+      color: white;
     }
 
     .card {
       width: 100%;
       max-width: 430px;
-      padding: 28px;
-      border-radius: 28px;
+      padding: 30px;
+      border-radius: 30px;
       background: rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(18px);
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
-      text-align: center;
       border: 1px solid rgba(255,255,255,0.2);
+      backdrop-filter: blur(18px);
+      text-align: center;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.4);
     }
 
     .icon {
@@ -40,15 +40,16 @@
       height: 110px;
       margin: 0 auto 20px;
       border-radius: 50%;
+      background: rgba(255,255,255,0.15);
       display: flex;
       justify-content: center;
       align-items: center;
       font-size: 56px;
-      background: rgba(255,255,255,0.15);
+      transition: 0.3s;
     }
 
     h1 {
-      margin: 10px 0;
+      margin: 8px 0;
       font-size: 32px;
     }
 
@@ -59,7 +60,7 @@
 
     .status {
       margin: 20px auto;
-      padding: 14px 22px;
+      padding: 14px 24px;
       border-radius: 999px;
       width: fit-content;
       font-size: 18px;
@@ -101,15 +102,11 @@
       font-size: 20px;
       font-weight: bold;
       cursor: pointer;
+      transition: 0.2s;
     }
 
     button:active {
       transform: scale(0.95);
-    }
-
-    button:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
     }
 
     .btn-on {
@@ -126,10 +123,10 @@
       margin-top: 20px;
       padding: 14px;
       border-radius: 16px;
-      background: rgba(15, 23, 42, 0.5);
-      font-size: 14px;
-      line-height: 1.7;
+      background: rgba(15, 23, 42, 0.55);
       color: #cbd5e1;
+      font-size: 14px;
+      line-height: 1.8;
     }
 
     .online {
@@ -144,14 +141,18 @@
 
     .footer {
       margin-top: 18px;
-      font-size: 13px;
       color: #94a3b8;
+      font-size: 13px;
     }
 
     @media (max-width: 480px) {
       body {
         align-items: flex-start;
         padding-top: 35px;
+      }
+
+      .card {
+        padding: 24px 18px;
       }
 
       .buttons {
@@ -175,24 +176,21 @@
     <h1>Smart Light</h1>
     <div class="subtitle">ESP32 + Firebase + Servo SG90</div>
 
-    <div id="statusBox" class="status waiting">
-      Loading...
-    </div>
+    <div id="statusBox" class="status waiting">Loading...</div>
 
     <div class="buttons">
-      <button id="onBtn" class="btn-on" onclick="sendCommand(true)">ON</button>
-      <button id="offBtn" class="btn-off" onclick="sendCommand(false)">OFF</button>
+      <button class="btn-on" onclick="sendCommand(true)">ON</button>
+      <button class="btn-off" onclick="sendCommand(false)">OFF</button>
     </div>
 
     <div class="info">
       ESP32: <span id="espStatus" class="offline">Checking...</span><br>
       Command: <span id="commandText">-</span><br>
-      Real Status: <span id="realStatusText">-</span>
+      Status: <span id="realStatusText">-</span><br>
+      Moving: <span id="movingText">-</span>
     </div>
 
-    <div class="footer" id="footerText">
-      Waiting...
-    </div>
+    <div class="footer" id="footerText">Waiting...</div>
   </div>
 
   <script>
@@ -204,12 +202,7 @@
     const espStatus = document.getElementById("espStatus");
     const commandText = document.getElementById("commandText");
     const realStatusText = document.getElementById("realStatusText");
-    const onBtn = document.getElementById("onBtn");
-    const offBtn = document.getElementById("offBtn");
-
-    let waiting = false;
-    let waitStart = 0;
-    const WAIT_TIMEOUT = 5000;
+    const movingText = document.getElementById("movingText");
 
     async function firebaseGet(path) {
       const res = await fetch(`${DATABASE_URL}/${path}.json`);
@@ -225,77 +218,60 @@
 
     async function sendCommand(state) {
       try {
-        waiting = true;
-        waitStart = Date.now();
-
-        setButtons(false);
-
         await firebasePut("lightCommand", state);
 
         statusBox.innerText = state ? "OPENING..." : "CLOSING...";
         statusBox.className = "status waiting";
-        footerText.innerText = "Waiting for ESP32 to confirm servo movement...";
-      } catch (error) {
+        footerText.innerText = "Command sent to ESP32";
+      } catch (e) {
         showError();
       }
     }
 
     async function updateData() {
       try {
-        const [command, status, online] = await Promise.all([
+        const [command, status, online, moving] = await Promise.all([
           firebaseGet("lightCommand"),
           firebaseGet("lightStatus"),
-          firebaseGet("espOnline")
+          firebaseGet("espOnline"),
+          firebaseGet("moving")
         ]);
 
-        commandText.innerText = command === true ? "ON requested" : "OFF requested";
-        realStatusText.innerText = status === true ? "LIGHT ON" : "LIGHT OFF";
+        espStatus.innerText = online ? "Online" : "Offline";
+        espStatus.className = online ? "online" : "offline";
 
-        if (online === true) {
-          espStatus.innerText = "Online";
-          espStatus.className = "online";
-        } else {
-          espStatus.innerText = "Offline";
-          espStatus.className = "offline";
-        }
+        commandText.innerText = command ? "ON requested" : "OFF requested";
+        realStatusText.innerText = status ? "LIGHT ON" : "LIGHT OFF";
+        movingText.innerText = moving ? "Servo moving..." : "Idle";
 
-        if (command === status) {
-          waiting = false;
-          setButtons(true);
-          updateUI(status);
-          return;
-        }
-
-        if (waiting && Date.now() - waitStart > WAIT_TIMEOUT) {
-          setButtons(true);
-          statusBox.innerText = "NO CONFIRM YET";
+        if (moving) {
+          statusBox.innerText = command ? "OPENING..." : "CLOSING...";
           statusBox.className = "status waiting";
-          footerText.innerText = "Servo may have moved, but ESP32 has not confirmed yet.";
+          footerText.innerText = "Servo is moving";
           return;
         }
 
         if (command !== status) {
-          statusBox.innerText = command ? "OPENING..." : "CLOSING...";
+          statusBox.innerText = "WAITING CONFIRM";
           statusBox.className = "status waiting";
-          footerText.innerText = "Waiting for ESP32 to confirm servo movement...";
+          footerText.innerText = "Waiting for ESP32 confirmation";
+          return;
         }
 
-      } catch (error) {
-        showError();
-      }
-    }
+        if (status) {
+          statusBox.innerText = "LIGHT ON";
+          statusBox.className = "status on";
+          lampIcon.style.filter = "drop-shadow(0 0 25px #facc15)";
+          footerText.innerText = "Confirmed by ESP32";
+        } else {
+          statusBox.innerText = "LIGHT OFF";
+          statusBox.className = "status off";
+          lampIcon.style.filter = "none";
+          footerText.innerText = "Confirmed by ESP32";
+        }
 
-    function updateUI(state) {
-      if (state === true) {
-        statusBox.innerText = "LIGHT ON";
-        statusBox.className = "status on";
-        lampIcon.style.filter = "drop-shadow(0 0 25px #facc15)";
-        footerText.innerText = "Confirmed by ESP32";
-      } else {
-        statusBox.innerText = "LIGHT OFF";
-        statusBox.className = "status off";
-        lampIcon.style.filter = "none";
-        footerText.innerText = "Confirmed by ESP32";
+      } catch (e) {
+        showError();
       }
     }
 
@@ -303,12 +279,6 @@
       statusBox.innerText = "Connection Error";
       statusBox.className = "status error";
       footerText.innerText = "Cannot connect to Firebase";
-      setButtons(true);
-    }
-
-    function setButtons(enable) {
-      onBtn.disabled = !enable;
-      offBtn.disabled = !enable;
     }
 
     updateData();
