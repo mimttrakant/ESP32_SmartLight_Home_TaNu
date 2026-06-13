@@ -15,24 +15,24 @@
     body {
       margin: 0;
       min-height: 100vh;
-      background: linear-gradient(135deg, #020617, #111827, #312e81);
+      background: linear-gradient(135deg, #020617, #0f172a, #312e81);
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 20px;
       color: white;
+      padding: 20px;
     }
 
     .card {
       width: 100%;
       max-width: 430px;
-      padding: 30px;
-      border-radius: 30px;
+      padding: 28px;
+      border-radius: 28px;
       background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255,255,255,0.2);
       backdrop-filter: blur(18px);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
       text-align: center;
-      box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+      border: 1px solid rgba(255,255,255,0.2);
     }
 
     .icon {
@@ -40,30 +40,31 @@
       height: 110px;
       margin: 0 auto 20px;
       border-radius: 50%;
-      background: rgba(255,255,255,0.15);
       display: flex;
       justify-content: center;
       align-items: center;
       font-size: 56px;
+      background: rgba(255,255,255,0.15);
       transition: 0.3s;
     }
 
     h1 {
-      margin: 8px 0;
+      margin: 10px 0;
       font-size: 32px;
     }
 
     .subtitle {
+      font-size: 15px;
       color: #cbd5e1;
       margin-bottom: 20px;
     }
 
     .status {
       margin: 20px auto;
-      padding: 14px 24px;
+      padding: 14px 22px;
       border-radius: 999px;
       width: fit-content;
-      font-size: 18px;
+      font-size: 20px;
       font-weight: bold;
     }
 
@@ -123,36 +124,37 @@
       margin-top: 20px;
       padding: 14px;
       border-radius: 16px;
-      background: rgba(15, 23, 42, 0.55);
-      color: #cbd5e1;
+      background: rgba(15, 23, 42, 0.5);
       font-size: 14px;
-      line-height: 1.8;
-    }
-
-    .online {
-      color: #86efac;
-      font-weight: bold;
-    }
-
-    .offline {
-      color: #fca5a5;
-      font-weight: bold;
+      line-height: 1.7;
+      color: #cbd5e1;
     }
 
     .footer {
       margin-top: 18px;
-      color: #94a3b8;
       font-size: 13px;
+      color: #94a3b8;
     }
 
     @media (max-width: 480px) {
       body {
         align-items: flex-start;
-        padding-top: 35px;
+        padding-top: 40px;
       }
 
       .card {
         padding: 24px 18px;
+        border-radius: 24px;
+      }
+
+      .icon {
+        width: 95px;
+        height: 95px;
+        font-size: 48px;
+      }
+
+      h1 {
+        font-size: 28px;
       }
 
       .buttons {
@@ -176,21 +178,23 @@
     <h1>Smart Light</h1>
     <div class="subtitle">ESP32 + Firebase + Servo SG90</div>
 
-    <div id="statusBox" class="status waiting">Loading...</div>
+    <div id="statusBox" class="status waiting">
+      Loading...
+    </div>
 
     <div class="buttons">
-      <button class="btn-on" onclick="sendCommand(true)">ON</button>
-      <button class="btn-off" onclick="sendCommand(false)">OFF</button>
+      <button class="btn-on" onclick="setLight(true)">ON</button>
+      <button class="btn-off" onclick="setLight(false)">OFF</button>
     </div>
 
     <div class="info">
-      ESP32: <span id="espStatus" class="offline">Checking...</span><br>
-      Command: <span id="commandText">-</span><br>
-      Status: <span id="realStatusText">-</span><br>
-      Moving: <span id="movingText">-</span>
+      Firebase Command:
+      <span id="commandText">Loading...</span>
     </div>
 
-    <div class="footer" id="footerText">Waiting...</div>
+    <div class="footer" id="footerText">
+      Waiting for Firebase...
+    </div>
   </div>
 
   <script>
@@ -198,80 +202,50 @@
 
     const statusBox = document.getElementById("statusBox");
     const lampIcon = document.getElementById("lampIcon");
-    const footerText = document.getElementById("footerText");
-    const espStatus = document.getElementById("espStatus");
     const commandText = document.getElementById("commandText");
-    const realStatusText = document.getElementById("realStatusText");
-    const movingText = document.getElementById("movingText");
+    const footerText = document.getElementById("footerText");
 
-    async function firebaseGet(path) {
-      const res = await fetch(`${DATABASE_URL}/${path}.json`);
-      return await res.json();
-    }
-
-    async function firebasePut(path, value) {
-      await fetch(`${DATABASE_URL}/${path}.json`, {
-        method: "PUT",
-        body: JSON.stringify(value)
-      });
-    }
-
-    async function sendCommand(state) {
+    async function setLight(state) {
       try {
-        await firebasePut("lightCommand", state);
-
-        statusBox.innerText = state ? "OPENING..." : "CLOSING...";
+        statusBox.innerText = state ? "SENDING ON..." : "SENDING OFF...";
         statusBox.className = "status waiting";
-        footerText.innerText = "Command sent to ESP32";
-      } catch (e) {
+        footerText.innerText = "Sending command to Firebase...";
+
+        await fetch(`${DATABASE_URL}/lightCommand.json`, {
+          method: "PUT",
+          body: JSON.stringify(state)
+        });
+
+        updateUI(state);
+      } catch (error) {
         showError();
       }
     }
 
-    async function updateData() {
+    async function getLightCommand() {
       try {
-        const [command, status, online, moving] = await Promise.all([
-          firebaseGet("lightCommand"),
-          firebaseGet("lightStatus"),
-          firebaseGet("espOnline"),
-          firebaseGet("moving")
-        ]);
+        const res = await fetch(`${DATABASE_URL}/lightCommand.json`);
+        const state = await res.json();
 
-        espStatus.innerText = online ? "Online" : "Offline";
-        espStatus.className = online ? "online" : "offline";
-
-        commandText.innerText = command ? "ON requested" : "OFF requested";
-        realStatusText.innerText = status ? "LIGHT ON" : "LIGHT OFF";
-        movingText.innerText = moving ? "Servo moving..." : "Idle";
-
-        if (moving) {
-          statusBox.innerText = command ? "OPENING..." : "CLOSING...";
-          statusBox.className = "status waiting";
-          footerText.innerText = "Servo is moving";
-          return;
-        }
-
-        if (command !== status) {
-          statusBox.innerText = "WAITING CONFIRM";
-          statusBox.className = "status waiting";
-          footerText.innerText = "Waiting for ESP32 confirmation";
-          return;
-        }
-
-        if (status) {
-          statusBox.innerText = "LIGHT ON";
-          statusBox.className = "status on";
-          lampIcon.style.filter = "drop-shadow(0 0 25px #facc15)";
-          footerText.innerText = "Confirmed by ESP32";
-        } else {
-          statusBox.innerText = "LIGHT OFF";
-          statusBox.className = "status off";
-          lampIcon.style.filter = "none";
-          footerText.innerText = "Confirmed by ESP32";
-        }
-
-      } catch (e) {
+        updateUI(state);
+      } catch (error) {
         showError();
+      }
+    }
+
+    function updateUI(state) {
+      if (state === true) {
+        statusBox.innerText = "COMMAND: ON";
+        statusBox.className = "status on";
+        lampIcon.style.filter = "drop-shadow(0 0 25px #facc15)";
+        commandText.innerText = "ON";
+        footerText.innerText = "Servo should move 90° → 0°";
+      } else {
+        statusBox.innerText = "COMMAND: OFF";
+        statusBox.className = "status off";
+        lampIcon.style.filter = "none";
+        commandText.innerText = "OFF";
+        footerText.innerText = "Servo should move 0° → 120°";
       }
     }
 
@@ -281,8 +255,8 @@
       footerText.innerText = "Cannot connect to Firebase";
     }
 
-    updateData();
-    setInterval(updateData, 1000);
+    getLightCommand();
+    setInterval(getLightCommand, 1000);
   </script>
 
 </body>
